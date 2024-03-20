@@ -1,51 +1,69 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
+from scipy.linalg import eigh
+from matplotlib.animation import FuncAnimation, PillowWriter
 
-# Parameters
-grid_size = 50
-time_step = 0.1
-total_time = 4
-timesteps = np.arange(0, total_time, time_step)
+# Grid size
+n, m = 10, 10
+N = n * m
 
-# Define your spatial grid (adjust as necessary)
-x, y = np.meshgrid(np.linspace(0, 1, grid_size), np.linspace(0, 1, grid_size))
+# Create the Laplacian matrix for a 10x10 grid
+def create_reflective_laplacian(n, m):
+    N = n * m
+    M = np.zeros((N, N))
+    for i in range(N):
+        M[i, i] = -4
+        row, col = divmod(i, m)
+        if col != 0:
+            M[i, i - 1] = 1
+        if col != (m - 1):
+            M[i, i + 1] = 1
+        if row != 0:
+            M[i, i - m] = 1
+        if row != (n - 1):
+            M[i, i + m] = 1
+    return M
 
-# Sample eigenmodes and eigenvalues (replace with your actual solutions)
-# For example, we use simple sine functions as placeholders
-eigenmodes = [
-    np.sin(np.pi * x) * np.sin(np.pi * y),   # First mode
-    np.sin(2 * np.pi * x) * np.sin(np.pi * y),  # Second mode
-    np.sin(np.pi * x) * np.sin(2 * np.pi * y)   # Third mode
-]
-eigenvalues = [np.pi**2, (2*np.pi)**2, (2*np.pi)**2]  # Corresponding eigenvalues
+# Create the matrix
+L = create_reflective_laplacian(n, m)
 
-# Initialize figure with subplots
-fig, axes = plt.subplots(1, len(eigenmodes), figsize=(15, 5))
+# Compute the eigenvalues and eigenvectors
+eigvals, eigvecs = eigh(L)
 
-# Make sure axes is an array for consistency
-if not isinstance(axes, np.ndarray):
-    axes = np.array([axes])
+# Constants for the T(t) function, adjust as necessary
+A, B, c = 1, 1, 1  # Example values, can be adjusted
 
-# Create a contour plot for each mode
-contours = []
-for ax, mode in zip(axes, eigenmodes):
-    contour = ax.contourf(x, y, mode, 100, cmap='viridis')
-    contours.append(contour)
+# Time-dependent function T(t)
+def T(t, lam):
+    return A * np.cos(c * lam * t) + B * np.sin(c * lam * t)
 
-# Update function for the animation
-def animate(t):
-    for ax, contour, mode, value in zip(axes, contours, eigenmodes, eigenvalues):
-        z = mode * np.sin(np.sqrt(value) * t)  # Time-dependent solution
-        for c in contour.collections:
-            c.remove()  # Remove old contours
-        ax.contourf(x, y, z, 100, cmap='viridis')
+# Number of modes and time points to simulate
+num_modes = 4
+time_points = 100
+t = np.linspace(0, 10, time_points)  # 0 to 10 seconds
 
-# Create animation
-ani = FuncAnimation(fig, animate, frames=timesteps, repeat=True)
+# Animation setup
+fig, axes = plt.subplots(2, 2, figsize=(10, 10))
+modes = [eigvecs[:, i].reshape(n, m) for i in range(num_modes)]
+ims = []
+
+for i in range(num_modes):
+    # Initial plot of the modes
+    img = axes[i // 2, i % 2].imshow(modes[i], animated=True, extent=[0, m, 0, n], vmin=-2, vmax=2, cmap='viridis')
+    axes[i // 2, i % 2].set_title(f'Mode {i+1}')
+    ims.append([img])  # Add the initial image to the list
 
 
+# Update function for animation
+def update_fig(frame):
+    for i in range(num_modes):
+        updated_mode = modes[i] * T(t[frame], eigvals[i])
+        ims[i][0].set_array(updated_mode)
+    return [im for sublist in ims for im in sublist]
 
-# Display the animation
-plt.show()
 
+ani = FuncAnimation(fig, update_fig, frames=len(t), interval=50, blit=True)
+
+# Save the animation as a GIF using Pillow
+writer = PillowWriter(fps=20)  # Adjust fps as needed for smoother animation
+ani.save('time_dependent_modes.gif', writer=writer)
